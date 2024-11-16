@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reveal Sdk - Load Dashboard</title>      
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://unpkg.com/dayjs@1.8.21/dayjs.min.js"></script>    
+    <script>window.revealDisableKeyboardManagement = true;</script>   
+    <script src="https://dl.revealbi.io/reveal/libs/1.7.1/infragistics.reveal.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script> -->
+</head>
+<body>
+    <div id="revealView" style="height: calc(100vh - 25px); width: 100%;"></div>
+    <script>
+        const baseUrl = "http://localhost:5111/", dashboardName = "Marketing";
+        let widgetDataMap = {};
+        $.ig.RevealSdkSettings.setBaseUrl(baseUrl);
+        $.ig.RevealSdkSettings.enableActionsOnHoverTooltip = $.ig.RevealSdkSettings.enableBetaFeatures = true;
+
+        $.ig.RVDashboard.loadDashboard(dashboardName).then(dashboard => {
+            const revealView = new $.ig.RevealView("#revealView");
+            revealView.interactiveFilteringEnabled = true;
+            revealView.dashboard = dashboard;
+            revealView.onDataReceived = async () => {
+                const widgets = revealView._dashboardView.__widgets;
+                widgets.forEach((widget) => {
+                    const widgetId = widget._widget?._id; 
+                    if (widgetId) {
+                        const tableData = widget.data()?.toJson(); 
+                        widgetDataMap[widgetId] = tableData; 
+                    }
+                });
+
+                // ****
+                // Write the JSON values to the console to learn what makes up
+                // the data being received when the dashboard loads.
+                // data is pulled from the server all at once and loaded asynchronously 
+                // into visualizations 
+                // ****
+                // for (const [widgetId, widgetData] of Object.entries(widgetDataMap)) {
+                //     if (widgetData?.Table?.DataColumns) {
+                //         widgetData.Table.DataColumns.forEach((dataColumn, index) => {
+                //             if (dataColumn.Cells) {
+                //                 dataColumn.Cells.forEach((cell, cellIndex) => {
+                //                 });
+                //             }                             
+                //             if (dataColumn.Values) {
+                //                 dataColumn.Values.forEach((value, valueIndex) => {                              
+                //                 });
+                //             } 
+                //         });
+                //     } 
+                // }
+            };
+
+            revealView.onTooltipShowing = ({ cell, visualization, customItems }) => {
+                const icons = ["https://svgsilh.com/svg/26432.svg", "https://svgsilh.com/svg/1879084.svg"];                
+                // ****
+                // Fetch data executes a server API that generates a generic .rdash file with a data grid
+                // that loads the underlying data used to make up the visualization.  This is not aggregated
+                // results, it is the table data of the data source.
+                // ****
+                const fetchData = (allFields, col, val, isDate, fmt) => {
+                    fetch(`${baseUrl}dashboards/${dashboardName}/visualizations/${visualization.id}/data?includeAllFields=${allFields}&filterColumn=${col}&filterValue=${val}&isDateFilter=${isDate}&formattedValue=${encodeURIComponent(fmt || '')}`)
+                        .then(res => res.ok ? window.open('data.html', 'DataPopup', 'width=700,height=800,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes') : alert('API call failed.'))
+                        .catch(() => alert('An error occurred while calling the API.'));
+                };
+
+                const value = cell.value, formattedValue = cell.formattedValue;
+                const isDate = !isNaN(Date.parse(value));
+                const filterValue = isDate ? new Date(value).toISOString() : value;
+
+                customItems.push(
+                    new $.ig.RVTooltipItem("Server Data", `Show ${formattedValue}`, icons[0], () => fetchData(false, cell.columnName, filterValue, isDate, formattedValue)),
+                    new $.ig.RVTooltipItem("Server Data", `Show All ${visualization.title}`, icons[1], () => fetchData(true, "AllColumns", "AllValues", false, null)),
+                    new $.ig.RVTooltipItem(
+                        "Local Data",
+                        `Show Rows/Columns`, // `Show ${visualization.title}`,
+                        icons[1],
+                        () => {
+                            const widgetData = widgetDataMap[visualization.id];
+                            if (widgetData?.Table?.DataColumns) {
+                                let displayData = `Visualization ID: ${visualization.title}\nVisualization ID: ${visualization.id}\n\n`;
+                                widgetData.Table.DataColumns.forEach((dataColumn, index) => {
+                                    displayData += `Data Column ${index + 1}: ${dataColumn.Name || "Unnamed"}\nValues:\n`;
+                                    if (dataColumn.Values) {
+                                        dataColumn.Values.forEach((value, valueIndex) => {
+                                            const formattedValue = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+                                            if (valueIndex === dataColumn.Values.length - 1) {
+                                                displayData += `  Total: ${formattedValue}\n`; 
+                                            } else {
+                                                displayData += `  ${valueIndex + 1}: ${formattedValue}\n`;
+                                            }
+                                        });
+                                    } else {
+                                        displayData += "  No values available.\n";
+                                    }
+
+                                    if (dataColumn.Cells) {
+                                        displayData += "\nCell Captions:\n";
+                                        dataColumn.Cells.forEach((cell, cellIndex) => {
+                                            const formattedValue = cell.FormattedValue || "No Value";
+                                            displayData += `  ${cellIndex + 1}: ${formattedValue} \n`;
+                                        });
+                                    } else {
+                                        displayData += "  No cells available.\n";
+                                    }
+                                    displayData += "\n";
+                                });
+                                alert(displayData);
+                            } else {
+                                alert(`No Data Columns available for Visualization ID: ${visualization.id}`);
+                            }
+                        }
+                    )
+                );
+            };
+        });
+    </script>
+</body>
+</html>

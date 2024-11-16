@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reveal Sdk - Load Dashboard</title>      
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://unpkg.com/dayjs@1.8.21/dayjs.min.js"></script>    
+    <script>window.revealDisableKeyboardManagement = true;</script>   
+    <script src="https://dl.revealbi.io/reveal/libs/1.7.1/infragistics.reveal.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
+</head>
+<body>
+    <div id="revealView" style="height: calc(100vh - 25px); width: 100%;"></div>
+    <script>
+        const baseUrl = "http://localhost:5111/", dashboardName = "Marketing";
+        $.ig.RevealSdkSettings.setBaseUrl(baseUrl);
+        $.ig.RevealSdkSettings.enableActionsOnHoverTooltip = true;
+        // $.ig.RevealSdkSettings.enableActionsOnHoverTooltip = $.ig.RevealSdkSettings.enableBetaFeatures = $.ig.RevealSdkSettings.enableNewToolbar = true;
+        $.ig.RVDashboard.loadDashboard(dashboardName).then(dashboard => {
+            const revealView = new $.ig.RevealView("#revealView");
+            revealView.interactiveFilteringEnabled = true;
+            revealView.dashboard = dashboard;
+            revealView.onTooltipShowing = ({ cell, visualization, customItems }) => {
+                const icons = ["https://svgsilh.com/svg/26432.svg", "https://svgsilh.com/svg/1879084.svg"];
+                const fetchData = (allFields, col, val, isDate, fmt) => {
+                    fetch(`${baseUrl}dashboards/${dashboardName}/visualizations/${visualization.id}/data?includeAllFields=${allFields}&filterColumn=${col}&filterValue=${val}&isDateFilter=${isDate}&formattedValue=${encodeURIComponent(fmt || '')}`)
+                        .then(res => res.ok ? window.open('data.html', 'DataPopup', 'width=700,height=800,toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes') : alert('API call failed.'))
+                        .catch(() => alert('An error occurred while calling the API.'));
+                };
+
+                const value = cell.value, formattedValue = cell.formattedValue;
+                const isDate = !isNaN(Date.parse(value));
+                const filterValue = isDate ? new Date(value).toISOString() : value;
+
+                customItems.push(
+                    new $.ig.RVTooltipItem("Underlying Data", `Show ${formattedValue}`, icons[0], () => fetchData(false, cell.columnName, filterValue, isDate, formattedValue)),
+                    new $.ig.RVTooltipItem("Underlying Data", `Show All ${visualization.title}`, icons[1], () => fetchData(true, "AllColumns", "AllValues", false, null))
+                );
+            };
+        });
+    </script>
+</body>
+</html>
