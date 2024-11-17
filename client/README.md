@@ -1,18 +1,4 @@
-# UI Features
-
-I used these HTML files for the 1.7 / Q4 2024 video.  Use the reveal.sdk.dom repo for the server.
-
-https://github.com/jberes/RevealDomServer
-
-https://youtu.be/_KgWsXXaa60
-
-![image](https://github.com/user-attachments/assets/8952c312-cbe1-4a36-8bfe-0ac6e4522857)
-
-Sure! Based on the content of your file, here's a summary and documentation for your GitHub `README.md`:
-
----
-
-## Reveal SDK - Dashboard Viewer
+## Reveal SDK - View Underlying Data of a Visualization or Visualization Data Item
 
 ### Summary
 The `Reveal SDK - Dashboard Viewer` is a tool designed to integrate and display interactive dashboards within your applications. It leverages the capabilities of the Reveal SDK to provide a seamless and efficient way to visualize data.
