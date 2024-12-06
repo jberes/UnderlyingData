@@ -78,6 +78,13 @@ app.MapGet("dashboards/{name}/visualizations/{id}/data",
     bool isDateFilter = false,
     string? formattedValue = null) =>
     {
+
+        var underlyingDataPath = "dashboards/underlyingdata.rdash";
+        if (File.Exists(underlyingDataPath))
+        {
+            File.Delete(underlyingDataPath);
+        }
+
         var filePath = "dashboards/" + name + ".rdash";
         var document = RdashDocument.Load(filePath);
         if (document == null)

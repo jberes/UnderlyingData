@@ -16,7 +16,7 @@
         const baseUrl = "http://localhost:5111/", dashboardName = "Marketing";
         let widgetDataMap = {};
         $.ig.RevealSdkSettings.setBaseUrl(baseUrl);
-        $.ig.RevealSdkSettings.enableActionsOnHoverTooltip = $.ig.RevealSdkSettings.enableBetaFeatures = true;
+        $.ig.RevealSdkSettings.enableActionsOnHoverTooltip =  true;
 
         $.ig.RVDashboard.loadDashboard(dashboardName).then(dashboard => {
             const revealView = new $.ig.RevealView("#revealView");
