@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reveal Sdk - Web Component</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .revealView {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .modal-content {
+            border-radius: 15px;
+            background-color: #f5f5f5;
+        }
+
+        .modal-header,
+        .modal-footer {
+            border: none;
+        }
+
+        .cancel-button {
+            background-color: #d8e1ff;
+            color: #0056e0;
+            font-weight: 500;
+            border: none;
+            border-radius: 25px;
+            padding: 10px 20px;
+        }
+
+        .cancel-button:hover {
+            background-color: #c6d4ff;
+        }
+
+        .list-group-item {
+            font-family: 'Roboto', sans-serif;
+            font-size: 16px;
+            font-weight: 400;
+            color: #333;
+            cursor: pointer;
+            padding: 10px 15px;
+            border: none;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .list-group-item:hover {
+            background-color: #e9ecef;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="revealView" class="revealView"></div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="dbSelector" tabindex="-1" aria-labelledby="dbSelectorLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="dbSelectorLabel">Select a Dashboard</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <ul id="thumbnails" class="list-group">
+                        <!-- Thumbnails will be appended here -->
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn cancel-button" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://unpkg.com/dayjs@1.8.21/dayjs.min.js"></script>
+    <script src="https://dl.revealbi.io/reveal/libs/1.7.0/infragistics.reveal.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script type="text/javascript">
+        $.ig.RevealSdkSettings.setBaseUrl("https://acmeanalyticsserver.azurewebsites.net/");
+
+        const modal = new bootstrap.Modal(document.getElementById("dbSelector"));
+
+        $.ig.RVDashboard.loadDashboard("Customers List").then(dashboard => {
+            revealView = new $.ig.RevealView("#revealView");
+            revealView.dashboard = dashboard;
+
+            revealView.onDashboardSelectorRequested = (args) => {
+                openDialog(args.callback);
+            }
+
+            revealView.onLinkedDashboardProviderAsync = (dashboardId, title) => {
+                return $.ig.RVDashboard.loadDashboard(dashboardId);
+            };
+        });
+
+        function openDialog(callback) {
+            fetch("https://acmeanalyticsserver.azurewebsites.net/dashboards/names")
+                .then(resp => resp.json())
+                .then(data => {
+                    const container = document.querySelector("#thumbnails");
+                    container.innerHTML = "";
+
+                    data.forEach(id => {
+                        createThumbnail(container, id.dashboardTitle, callback);
+                    });
+                })
+                .then(() => modal.show());
+        }
+
+        function createThumbnail(container, id, callback) {
+            const listItem = document.createElement("li");
+            listItem.className = "list-group-item";
+            listItem.innerText = id;
+            listItem.addEventListener('click', () => {
+                callback(id);
+                modal.hide();
+            });
+            container.appendChild(listItem);
+        }
+    </script>
+</body>
+
+</html>
