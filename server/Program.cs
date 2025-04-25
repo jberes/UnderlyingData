@@ -5,18 +5,19 @@ using RevealSdk.Server;
 using Reveal.Sdk.Dom.Filters;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Reveal.Sdk.Data.Excel;
+using Reveal.Sdk.Data;
+using Reveal.Sdk.Dom.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers().AddReveal(builder =>
 {
-    builder
-        .AddDataSourceProvider<DataSourceProvider>();
+    builder.AddDataSourceProvider<RevealSdk.Server.DataSourceProvider>();
 });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
@@ -39,24 +40,20 @@ app.MapGet("/dashboards/names", () =>
     {
         string folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Dashboards");
         var files = Directory.GetFiles(folderPath);
-        Random rand = new();
 
         var fileNames = files.Select(file =>
         {
             try
             {
-                return new DashboardNames
-                {
-                    DashboardFileName = Path.GetFileNameWithoutExtension(file),
-                    DashboardTitle = RdashDocument.Load(file).Title
-                };
+                var doc = RdashDocument.Load(file);
+                return new DashboardNames(Path.GetFileNameWithoutExtension(file), doc.Title);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error Reading FileData {file}: {ex.Message}");
                 return null;
             }
-        }).Where(fileData => fileData != null).ToList();
+        }).Where(x => x != null).ToList();
 
         return Results.Ok(fileNames);
     }
@@ -65,194 +62,177 @@ app.MapGet("/dashboards/names", () =>
         Console.WriteLine($"Error Reading Directory : {ex.Message}");
         return Results.Problem("An unexpected error occurred while processing the request.");
     }
-
-}).Produces<IEnumerable<DashboardNames>>(StatusCodes.Status200OK)
+})
+.Produces<IEnumerable<DashboardNames>>(StatusCodes.Status200OK)
 .Produces(StatusCodes.Status404NotFound)
 .ProducesProblem(StatusCodes.Status500InternalServerError);
 
-app.MapGet("dashboards/{name}/visualizations/{id}/data",
-    (string name, string id,
-    bool includeAllFields = false,
-    string? filterColumn = null,
-    string? filterValue = null,
-    bool isDateFilter = false,
-    string? formattedValue = null) =>
-    {
-
-        var underlyingDataPath = "dashboards/underlyingdata.rdash";
-        if (File.Exists(underlyingDataPath))
-        {
-            File.Delete(underlyingDataPath);
-        }
-
-        var filePath = "dashboards/" + name + ".rdash";
-        var document = RdashDocument.Load(filePath);
-        if (document == null)
-        {
-            return Results.NotFound("Dashboard not found.");
-        }
-
-        var visualization = document.Visualizations.FindById(id);
-        if (visualization == null)
-        {
-            return Results.NotFound("Visualization not found.");
-        }
-
-        string fieldName = null;
-        var vizDataSourceItem = (visualization as Visualization).GetDataSourceItem();
-        var fields = vizDataSourceItem.Fields;
-
-        foreach (var field in fields)
-        {
-            if (field is Reveal.Sdk.Dom.Visualizations.DateTimeField)
-            {
-                fieldName = field.FieldName;
-            }
-        }
-
-        var newDocument = new RdashDocument("My Dashboard");
-
-        if (isDateFilter && !string.IsNullOrEmpty(filterValue))
-        {
-            var classificationValue = formattedValue ?? filterValue;
-            var formatClassification = ClassifyDateFormat(classificationValue);
-
-            if (DateTime.TryParse(filterValue, null, DateTimeStyles.RoundtripKind, out DateTime parsedDate))
-            {
-                DateTime startOfPeriod = DateTime.MinValue;
-                DateTime endOfPeriod = DateTime.MinValue;
-
-                switch (formatClassification.ToLower())
-                {
-                    case "year":
-                        startOfPeriod = new DateTime(parsedDate.Year, 1, 1);
-                        endOfPeriod = new DateTime(parsedDate.Year, 12, 31);
-                        break;
-
-                    case "quarter":
-                        int quarter = (parsedDate.Month - 1) / 3 + 1;
-                        startOfPeriod = new DateTime(parsedDate.Year, (quarter - 1) * 3 + 1, 1);
-                        endOfPeriod = startOfPeriod.AddMonths(3).AddDays(-1);
-                        break;
-
-                    case "month":
-                        startOfPeriod = new DateTime(parsedDate.Year, parsedDate.Month, 1);
-                        endOfPeriod = startOfPeriod.AddMonths(1).AddDays(-1);
-                        break;
-
-                    case "day":
-                        startOfPeriod = parsedDate.Date;
-                        endOfPeriod = parsedDate.Date;
-                        break;
-
-                    case "hour":
-                    case "minute":
-                        startOfPeriod = parsedDate;
-                        endOfPeriod = parsedDate;
-                        break;
-
-                    default:
-                        return Results.BadRequest("Invalid date type format.");
-                }
-
-                var dateFilter = new DashboardDateFilter()
-                {
-                    Title = filterColumn,
-                    RuleType = DateRuleType.CustomRange,
-                    CustomDateRange = new DateRange
-                    {
-                        From = startOfPeriod,
-                        To = endOfPeriod
-                    }
-                };
-
-                newDocument.Filters.Add(dateFilter);
-                var filterBinding = new DashboardDateFilterBinding(filterColumn);
-                var gridViz = new GridVisualization(
-                    visualization.Title + (!string.IsNullOrEmpty(formattedValue) ? " for " + formattedValue : ""),
-                    vizDataSourceItem);
-                gridViz.FilterBindings.Add(filterBinding);
-
-                newDocument.Visualizations.Add(gridViz);
-                newDocument.Save("dashboards/underlyingdata.rdash");
-
-                return Results.Ok(newDocument);
-            }
-            else
-            {
-                return Results.BadRequest("Invalid date format.");
-            }
-        }
-        else if (!isDateFilter && !string.IsNullOrEmpty(filterColumn) && !string.IsNullOrEmpty(filterValue))
-        {
-            var filterItem = new FilterItem
-            {
-                FieldValues = new Dictionary<string, object>
-            {
-                { filterColumn, filterValue }
-            }
-            };
-
-            var dataFilter = new DashboardDataFilter(vizDataSourceItem)
-            {
-                Title = filterColumn,
-                FieldName = filterColumn,
-                AllowMultipleSelection = true,
-                AllowEmptySelection = true,
-                SelectedItems = new List<FilterItem> { filterItem }
-            };
-
-            newDocument.Filters.Add(dataFilter);
-            var filterBinding = new DashboardDataFilterBinding(dataFilter);
-            var gridViz = new GridVisualization(
-                visualization.Title + (!string.IsNullOrEmpty(formattedValue) ? " for " + formattedValue : ""),
-                vizDataSourceItem);
-            gridViz.FilterBindings.Add(filterBinding);
-
-            newDocument.Visualizations.Add(gridViz);
-            newDocument.Save("dashboards/underlyingdata.rdash");
-
-            return Results.Ok(newDocument);
-        }
-        else
-        {
-            return Results.BadRequest("Insufficient parameters for filtering.");
-        }
-    });
-
-string ClassifyDateFormat(string formattedValue)
+app.MapGet("/dashboards/{name}/visualizations/{id}/data",
+                (string name, string id,
+                bool includeAllFields = false,
+                string? filterColumn = null,
+                string? filterValue = null,
+                bool isDateFilter = false,
+                string? formattedValue = null) =>
 {
-    // Regular expressions for various formats
-    var yearFormat = new Regex(@"^\d{4}$");
-    var quarterFormat = new Regex(@"^\d{4}-Q\d$|^\d{2}-Q\d$|^Q\d$");
-    var monthFormats = new Regex(@"^\w{3}-\d{4}$|^\w{3}-\d{2}$|^\d{2}-\d{4}$|^\d{1}-\d{2}$|^\w{3}$|^\d{2}$|^\d{1}$");
-    var dayFormats = new Regex(@"^\d{2}-\w{3}-\d{4}$|^\d{4}-\d{2}-\d{2}$|^\d{2}/\d{2}/\d{4}$|^\d{2}/\d{2}/\d{2}$|^\d{2}-\w{3}$|^\w{3}-\d{2}$|^\d{2}-\d{2}$");
-    var hourFormats = new Regex(@"^\d{2}-\w{3}-\d{4} \d{2}:\d{2}$|^\d{2}-\w{3}-\d{2} \d{2}:\d{2}$|^\d{2}-\w{3} \d{2}:\d{2}$|^\d{2}/\d{2}/\d{4} \d{2}:\d{2}$");
-    var minuteFormats = new Regex(@"^\d{2}-\w{3}-\d{4} \d{2}:\d{2}$|^\d{2}-\w{3}-\d{2} \d{2}:\d{2}$|^\d{2}-\w{3} \d{2}:\d{2}$");
+    var filePath = Path.Combine("dashboards", $"{name}.rdash");
+    if (!File.Exists(filePath)) return Results.NotFound("Dashboard not found.");
 
-    if (yearFormat.IsMatch(formattedValue))
-        return "Year";
-    if (quarterFormat.IsMatch(formattedValue))
-        return "Quarter";
-    if (monthFormats.IsMatch(formattedValue))
-        return "Month";
-    if (dayFormats.IsMatch(formattedValue))
-        return "Day";
-    if (hourFormats.IsMatch(formattedValue))
-        return "Hour";
-    if (minuteFormats.IsMatch(formattedValue))
-        return "Minute";
+    var document = RdashDocument.Load(filePath);
+    var visualization = document.Visualizations.FindById(id);
+    if (visualization is not Visualization typedViz)
+        return Results.NotFound("Visualization not found or invalid.");
 
-    return "Unknown format";
-}
+    var vizDataSourceItem = typedViz.GetDataSourceItem();
+    var newDocument = new RdashDocument("My Dashboard");
+    var gridFields = includeAllFields
+        ? vizDataSourceItem.Fields.Select(f => f.FieldName).ToList()
+        : GetFieldNames(typedViz);
+
+    if (isDateFilter && !string.IsNullOrEmpty(filterValue))
+    {
+        if (!DateTime.TryParse(filterValue, null, DateTimeStyles.RoundtripKind, out var parsedDate))
+            return Results.BadRequest("Invalid date format.");
+
+        var dateRange = GetDateRange(parsedDate, formattedValue ?? filterValue);
+        if (dateRange == null)
+            return Results.BadRequest("Invalid date type format.");
+
+        var dateFilter = new DashboardDateFilter
+        {
+            Title = filterColumn,
+            RuleType = DateRuleType.CustomRange,
+            CustomDateRange = dateRange
+        };
+
+        var filterBinding = new DashboardDateFilterBinding(filterColumn);
+        newDocument.Filters.Add(dateFilter);
+
+        var gridViz = CreateGridViz(typedViz, vizDataSourceItem, gridFields, filterBinding, formattedValue);
+        newDocument.Visualizations.Add(gridViz);
+        newDocument.Save("dashboards/underlyingdata.rdash");
+
+        return Results.Ok(newDocument);
+    }
+    else if (!string.IsNullOrEmpty(filterColumn) && !string.IsNullOrEmpty(filterValue))
+    {
+        var filterItem = new FilterItem
+        {
+            FieldValues = new Dictionary<string, object> { { filterColumn, filterValue } }
+        };
+
+        var dataFilter = new DashboardDataFilter(vizDataSourceItem)
+        {
+            Title = filterColumn,
+            FieldName = filterColumn,
+            AllowMultipleSelection = true,
+            AllowEmptySelection = true,
+            SelectedItems = new List<FilterItem> { filterItem }
+        };
+
+        var filterBinding = new DashboardDataFilterBinding(dataFilter);
+        newDocument.Filters.Add(dataFilter);
+
+        var gridViz = CreateGridViz(typedViz, vizDataSourceItem, gridFields, filterBinding, formattedValue);
+        newDocument.Visualizations.Add(gridViz);
+        newDocument.Save("dashboards/underlyingdata.rdash");
+
+        return Results.Ok(newDocument);
+    }
+
+    return Results.BadRequest("Insufficient parameters for filtering.");
+});
 
 app.Run();
 
-// ***
-// This is a helper class to store the dashboard names
-// ***
-public class DashboardNames
+static GridVisualization CreateGridViz(IVisualization viz, DataSourceItem sourceItem, IEnumerable<string> fields, dynamic filterBinding, string? formattedTitle)
 {
-    public string? DashboardFileName { get; set; }
-    public string? DashboardTitle { get; set; }
+    var gridViz = new GridVisualization(
+        viz.Title + (!string.IsNullOrEmpty(formattedTitle) ? " for " + formattedTitle : ""),
+        sourceItem
+    ).SetColumns(fields.ToArray());
+    gridViz.ConfigureSettings(x => x.PageSize = 100);
+    gridViz.FilterBindings.Add(filterBinding); // works at runtime
+    return gridViz;
 }
+
+static DateRange? GetDateRange(DateTime date, string formattedValue)
+{
+    var format = ClassifyDateFormat(formattedValue.ToLower());
+
+    switch (format)
+    {
+        case "year":
+            return new DateRange
+            {
+                From = new DateTime(date.Year, 1, 1),
+                To = new DateTime(date.Year, 12, 31)
+            };
+
+        case "quarter":
+            int q = (date.Month - 1) / 3;
+            var quarterStart = new DateTime(date.Year, q * 3 + 1, 1);
+            return new DateRange
+            {
+                From = quarterStart,
+                To = quarterStart.AddMonths(3).AddDays(-1)
+            };
+
+        case "month":
+            var monthStart = new DateTime(date.Year, date.Month, 1);
+            return new DateRange
+            {
+                From = monthStart,
+                To = monthStart.AddMonths(1).AddDays(-1)
+            };
+
+        case "day":
+            return new DateRange { From = date.Date, To = date.Date };
+
+        case "hour":
+        case "minute":
+            return new DateRange { From = date, To = date };
+
+        default:
+            return null;
+    }
+}
+
+static string ClassifyDateFormat(string formattedValue)
+{
+    var patterns = new (string name, Regex pattern)[]
+    {
+        ("year", new(@"^\d{4}$")),
+        ("quarter", new(@"^\d{4}-Q\d$|^\d{2}-Q\d$|^Q\d$")),
+        ("month", new(@"^\w{3}-\d{4}$|^\w{3}-\d{2}$|^\d{2}-\d{4}$|^\d{1}-\d{2}$|^\w{3}$|^\d{2}$|^\d{1}$")),
+        ("day", new(@"^\d{2}-\w{3}-\d{4}$|^\d{4}-\d{2}-\d{2}$|^\d{2}/\d{2}/\d{4}$|^\d{2}/\d{2}/\d{2}$|^\d{2}-\w{3}$|^\w{3}-\d{2}$|^\d{2}-\d{2}$")),
+        ("hour", new(@"^\d{2}-\w{3}-\d{4} \d{2}:\d{2}$|^\d{2}-\w{3}-\d{2} \d{2}:\d{2}$|^\d{2}-\w{3} \d{2}:\d{2}$|^\d{2}/\d{2}/\d{4} \d{2}:\d{2}$")),
+        ("minute", new(@"^\d{2}-\w{3}-\d{4} \d{2}:\d{2}$|^\d{2}-\w{3}-\d{2} \d{2}:\d{2}$|^\d{2}-\w{3} \d{2}:\d{2}$"))
+    };
+
+    foreach (var (name, regex) in patterns)
+        if (regex.IsMatch(formattedValue)) return name;
+
+    return "unknown format";
+}
+
+static List<string> GetFieldNames(IVisualization visualization)
+{
+    var fields = new List<string>();
+
+    if (visualization is ILabels iLabels)
+        fields.AddRange(iLabels.Labels.Select(x => x.DataField.FieldName));
+
+    if (visualization is IRows iRows)
+        fields.AddRange(iRows.Rows.Select(x => x.DataField.FieldName));
+
+    if (visualization is ITargets iTargets)
+        fields.AddRange(iTargets.Targets.Select(x => x.DataField.FieldName));
+
+    if (visualization is IValues iValues)
+        fields.AddRange(iValues.Values.Select(x => x.DataField.FieldName));
+
+    return fields;
+}
+
+public record DashboardNames(string? DashboardFileName, string? DashboardTitle);

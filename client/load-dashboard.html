@@ -7,7 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
     <script src="https://unpkg.com/dayjs@1.8.21/dayjs.min.js"></script>
     <script>window.revealDisableKeyboardManagement = true;</script>
-    <script src="https://dl.revealbi.io/reveal/libs/1.7.1/infragistics.reveal.js"></script>
+    <script src="https://dl.revealbi.io/reveal/libs/1.7.3/infragistics.reveal.js"></script>
 </head>
 <body>
     <div id="revealView" style="height: calc(100vh - 25px); width: 100%;"></div>
@@ -34,7 +34,7 @@
                 const revealView = new $.ig.RevealView("#revealView");
 
                 // Optional setting, however this ensures you get
-                // the interactive tooltop when hovering over visualizations
+                // the interactive tooltip when hovering over visualizations
                 revealView.interactiveFilteringEnabled = true;
                 revealView.dashboard = dashboard;
 
@@ -136,7 +136,7 @@
                     "Underlying Data",
                     `Show All ${args.visualization.title}`,
                     icons[1],
-                    () => fetchData(true, "AllColumns", "AllValues", false, null)
+                    () => fetchData(false, "AllColumns", "AllValues", false, null)
                 )
             );
         }
