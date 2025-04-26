@@ -9,7 +9,7 @@
         <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
         <script src="https://unpkg.com/dayjs@1.8.21/dayjs.min.js"></script>
         <script>window.revealDisableKeyboardManagement = true;</script>
-        <script src="https://dl.revealbi.io/reveal/libs/1.7.3/infragistics.reveal.js"></script>
+        <script src="https://dl.revealbi.io/reveal/libs/1.7.2/infragistics.reveal.js"></script>
     </head>
 <body>
     
@@ -65,6 +65,10 @@
                 revealView.dashboard = dashboard;
                 revealView.interactiveFilteringEnabled = true;
 
+                revealView.onLinkedDashboardProviderAsync = function (dashboardId, title) {
+                return $.ig.RVDashboard.loadDashboard(title);
+                };
+
                 revealView.onTooltipShowing = (args) => {
                     handleTooltipShowing(args, baseUrl, dashboardFilename);
                 };
@@ -119,6 +123,8 @@
                     formattedValue: formattedValue || ''
                 }).toString();
 
+                console.log("query Params", queryParams);
+
                 const url = `${baseUrl}dashboards/${dashboardName}/visualizations/${args.visualization.id}/data?${queryParams}`;
 
                 /**
@@ -169,7 +175,7 @@
                     "Underlying Data",
                     `Show ${args.cell.formattedValue}`,
                     icons[0],
-                    () => fetchData(false, args.cell.columnName, formattedFilterValue, isDateValue, args.cell.formattedValue)
+                    () => fetchData(true, args.cell.columnName, formattedFilterValue, isDateValue, args.cell.formattedValue)
                 ),
                 new $.ig.RVTooltipItem(
                     "Underlying Data",

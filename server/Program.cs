@@ -143,6 +143,97 @@ app.MapGet("/dashboards/{name}/visualizations/{id}/data",
     return Results.BadRequest("Insufficient parameters for filtering.");
 });
 
+app.MapPost("/dashboards/generate", (GenerateDashboardRequest request) =>
+{
+    try
+    {
+        var dashboardDocument = new RdashDocument("Generated Dashboard");
+
+        var filePath = Path.Combine("dashboards", $"{request.DashboardFileName}.rdash");
+        if (!File.Exists(filePath))
+        {
+            return Results.NotFound($"Dashboard file not found: {request.DashboardFileName}");
+        }
+
+        var sourceDoc = RdashDocument.Load(filePath);
+        if (sourceDoc == null)
+        {
+            return Results.BadRequest($"Failed to load dashboard: {request.DashboardFileName}");
+        }
+
+        dashboardDocument.Import(sourceDoc, request.VizId);
+
+        // Save it to disk, if you want
+        var outputPath = Path.Combine("dashboards", "generated-dashboard.rdash");
+        dashboardDocument.Save(outputPath);
+
+        // Optionally return the dashboard document JSON (can be used by client RevealView)
+        return Results.Ok(dashboardDocument);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Error generating dashboard: {ex.Message}");
+        return Results.Problem("An error occurred while generating the dashboard.");
+    }
+});
+
+app.MapPost("/dashboards/generatewithdata", (GenerateDashboardRequest request) =>
+{
+    try
+    {
+        var dashboardDocument = new RdashDocument("Data Analyzer");
+
+        // Step 1: Load source dashboard
+        var sourcePath = Path.Combine("dashboards", $"{request.DashboardFileName}.rdash");
+        if (!File.Exists(sourcePath))
+            return Results.NotFound($"Dashboard file not found: {request.DashboardFileName}");
+
+        var sourceDoc = RdashDocument.Load(sourcePath);
+        if (sourceDoc == null)
+            return Results.BadRequest($"Failed to load dashboard: {request.DashboardFileName}");
+
+        // Step 2: Import selected visualization
+        dashboardDocument.Import(sourceDoc, request.VizId);
+        dashboardDocument.Title = "Data Analyzer - " + sourceDoc.Title;
+
+        // Step 3: Create a GridVisualization for underlying data
+        var visualization = sourceDoc.Visualizations.FindById(request.VizId);
+        if (visualization is not Visualization typedViz)
+            return Results.NotFound("Visualization not found or invalid in source dashboard.");
+
+        var vizDataSourceItem = typedViz.GetDataSourceItem();
+        var gridFields = vizDataSourceItem.Fields.Select(f => f.FieldName).ToList(); // include all fields
+
+        var gridViz = new GridVisualization(
+            typedViz.Title + " - Underlying Data",
+            vizDataSourceItem
+        ).SetColumns(gridFields.ToArray());
+
+        gridViz.ConfigureSettings(x => x.PageSize = 100);
+
+        dashboardDocument.Visualizations.Add(gridViz);
+
+        // Step 4: Delete old generated file if exists
+        var outputPath = Path.Combine("dashboards", "generated-dashboard.rdash");
+        if (File.Exists(outputPath))
+        {
+            File.Delete(outputPath);
+        }
+
+        // Step 5: Save
+        //var outputPath = Path.Combine("dashboards", "generated-dashboard.rdash");
+        dashboardDocument.Save(outputPath);
+
+        return Results.Ok(dashboardDocument);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Error generating dashboard with data: {ex.Message}");
+        return Results.Problem("An error occurred while generating the dashboard.");
+    }
+});
+
+
 app.Run();
 
 static GridVisualization CreateGridViz(IVisualization viz, DataSourceItem sourceItem, IEnumerable<string> fields, dynamic filterBinding, string? formattedTitle)
@@ -236,3 +327,10 @@ static List<string> GetFieldNames(IVisualization visualization)
 }
 
 public record DashboardNames(string? DashboardFileName, string? DashboardTitle);
+
+
+public class GenerateDashboardRequest
+{
+    public string DashboardFileName { get; set; } = default!;
+    public string VizId { get; set; } = default!;
+}
